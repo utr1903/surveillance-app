@@ -5,9 +5,7 @@ import struct
 import cv2
 import numpy as np
 import time
-# import matplotlib.pyplot as pl
 from tensorflow.lite.python.interpreter import Interpreter
-# from tflite_runtime.interpreter import Interpreter
 
 # Binary data format stands for how to read the incoming byte array
 # '<' depends on host system and stands for little-endian (compatible for Intelx86 and AMD64)
@@ -30,27 +28,38 @@ LABELMAP_PATH = CWD_PATH + os.path.sep + 'model' + os.path.sep + 'labelmap.txt' 
 CONFIDENCE_THRESHOLD = 0.5
 
 # Load the label map // Neglect lines with '???'
-labels = []
-with open(LABELMAP_PATH, 'r') as f:
-    while True:
+def load_labels():
+    labels = []
+    with open(LABELMAP_PATH, 'r') as f:
+        while True:
 
-        line = f.readline()
-        if not line:
-            break
-        line = line.strip()
+            line = f.readline()
+            if not line:
+                break
+            line = line.strip()
 
-        if line != '???':
-            labels.append(line)
+            if line != '???':
+                labels.append(line)
+    return labels
 
-# Load the Tensorflow Lite model.
-interpreter = Interpreter(model_path=MODEL_PATH)
-interpreter.allocate_tensors()
+# Load the tensorflow Lite model.
+def load_interpreter():
+    interpreter = Interpreter(model_path=MODEL_PATH)
+    interpreter.allocate_tensors()
+    return interpreter
 
 # Get model details
-input_details = interpreter.get_input_details()
-output_details = interpreter.get_output_details()
-height = input_details[0]['shape'][1]
-width = input_details[0]['shape'][2]
+def get_model_details():
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+    height = input_details[0]['shape'][1]
+    width = input_details[0]['shape'][2]
+    return input_details, output_details, height, width
+
+# Setup object detection environment
+labels = load_labels()
+interpreter = load_interpreter()
+input_details, output_details, height, width = get_model_details()
 
 # Create a server side socket and start to listen
 server_socket = socket.socket()
