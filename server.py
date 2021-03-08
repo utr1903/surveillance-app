@@ -59,7 +59,7 @@ def get_model_details():
 # Setup object detection environment
 labels = load_labels()
 interpreter = load_interpreter()
-input_details, output_details, height, width = get_model_details()
+input_details, output_details, model_height, model_width = get_model_details()
 
 # Create a server side socket and start to listen
 server_socket = socket.socket()
@@ -93,12 +93,12 @@ try:
 
         frame = frame_orig.copy()
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame_resized = cv2.resize(frame_rgb, (width, height))
+        frame_resized = cv2.resize(frame_rgb, (model_width, model_height))
         
         # Convert 3 dimensional array into 4 for interpreter
         input_data = np.expand_dims(frame_resized, axis=0)
 
-        # Set tensor for tensorflow and run object detection on frame (data)
+        # Set tensor for tensorflow and run object detection on frame (input_data)
         interpreter.set_tensor(input_details[0]['index'], input_data)
         interpreter.invoke()
 
@@ -107,8 +107,9 @@ try:
         classes = interpreter.get_tensor(output_details[1]['index'])[0] # Class index of detected objects
         scores = interpreter.get_tensor(output_details[2]['index'])[0] # Confidence of detected objects
 
-        # Loop over all detections and draw detection box if confidence is above minimum threshold
+        # Loop over all detections
         for i in range(len(scores)):
+            # Filter humans (classes[i] == 0) and detections above threshold
             if (classes[i] == 0) and ((scores[i] > CONFIDENCE_THRESHOLD) and (scores[i] <= 1.0)):
 
                 # Get bounding box coordinates and draw box
@@ -121,18 +122,17 @@ try:
                 cv2.rectangle(frame, (xmin,ymin), (xmax,ymax), (10, 255, 0), 2)
 
                 # Draw label
-                object_name = labels[int(classes[i])] # Look up object name from "labels" array using class index
-                label = '%s: %d%%' % (object_name, int(scores[i]*100)) # Example: 'person: 72%'
+                label = '%s: %d%%' % ('person', int(scores[i]*100)) # e.g. 'person: 95%'
                 labelSize, baseLine = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2) # Get font size
                 label_ymin = max(ymin, labelSize[1] + 10) # Make sure not to draw label too close to top of window
                 cv2.rectangle(frame, (xmin, label_ymin-labelSize[1]-10), (xmin+labelSize[0], label_ymin+baseLine-10), (255, 255, 255), cv2.FILLED) # Draw white box to put label text in
                 cv2.putText(frame, label, (xmin, label_ymin-7), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2) # Draw label text
         
-        # img = cv2.imread('image.jpg')
         cv2.imshow('IMAGE', frame)
 
         # Press 'Q' on keyboard to quit
         if cv2.waitKey(1) == ord('q'):
+            cv2.destroyAllWindows()
             break
 
 finally:
