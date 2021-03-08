@@ -5,6 +5,7 @@ import struct
 import cv2
 import numpy as np
 import time
+from datetime import datetime
 from tensorflow.lite.python.interpreter import Interpreter
 
 # Binary data format stands for how to read the incoming byte array
@@ -23,9 +24,14 @@ PORT = 8000
 CWD_PATH = os.getcwd() # working directory
 MODEL_PATH = CWD_PATH + os.path.sep + 'model' + os.path.sep + 'detect.tflite' # directory of object detection model
 LABELMAP_PATH = CWD_PATH + os.path.sep + 'model' + os.path.sep + 'labelmap.txt' # directory of object labes
+CAPTURES_PATH = CWD_PATH + os.path.sep + 'captures' + os.path.sep # directory of captured videos
 
 # Confidence threshold for detected objects
 CONFIDENCE_THRESHOLD = 0.5
+
+# Initialize video recorder
+video_recorder = cv2.VideoWriter()
+is_recording = False
 
 # Load the label map // Neglect lines with '???'
 def load_labels():
@@ -55,6 +61,13 @@ def get_model_details():
     height = input_details[0]['shape'][1]
     width = input_details[0]['shape'][2]
     return input_details, output_details, height, width
+
+def check_people_detection(classes):
+    for i in classes:
+        if i == 0:
+            print('Human found')
+            return True
+    return False
 
 # Setup object detection environment
 labels = load_labels()
@@ -88,8 +101,8 @@ try:
 
         # Create an image out of byte array
         frame_orig = cv2.imdecode(data, 1)
-        imageHeight = frame_orig.shape[0]
-        imageWidth = frame_orig.shape[1]
+        image_height = frame_orig.shape[0]
+        image_width = frame_orig.shape[1]
 
         frame = frame_orig.copy()
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -107,26 +120,48 @@ try:
         classes = interpreter.get_tensor(output_details[1]['index'])[0] # Class index of detected objects
         scores = interpreter.get_tensor(output_details[2]['index'])[0] # Confidence of detected objects
 
-        # Loop over all detections
-        for i in range(len(scores)):
-            # Filter humans (classes[i] == 0) and detections above threshold
-            if (classes[i] == 0) and ((scores[i] > CONFIDENCE_THRESHOLD) and (scores[i] <= 1.0)):
+        # Instantiate a new video recorder if;
+        # -> some people are detected on the current frame
+        # -> a video is already not being recorded
+        is_detected = check_people_detection(classes)
+        if is_detected == True:
+            if is_recording == False:
+                is_recording = True
+                fourcc = cv2.VideoWriter_fourcc('M','J','P','G')
+                fps = 2
+                start_time = datetime.now().strftime("%d_%m_%Y_%H_%M_%S")
+                video_name = CAPTURES_PATH + 'video_' + start_time + '.avi'
+                video_recorder = cv2.VideoWriter(video_name, fourcc, fps, (image_width, image_height))
+            
+            # Loop over all detections
+            for i in range(len(scores)):
+                # Filter humans (classes[i] == 0) and detections above threshold
+                if (classes[i] == 0) and ((scores[i] > CONFIDENCE_THRESHOLD) and (scores[i] <= 1.0)):
 
-                # Get bounding box coordinates and draw box
-                # Interpreter can return coordinates that are outside of image dimensions, need to force them to be within image using max() and min()
-                ymin = int(max(1,(boxes[i][0] * imageHeight)))
-                xmin = int(max(1,(boxes[i][1] * imageWidth)))
-                ymax = int(min(imageHeight,(boxes[i][2] * imageHeight)))
-                xmax = int(min(imageWidth,(boxes[i][3] * imageWidth)))
-                
-                cv2.rectangle(frame, (xmin,ymin), (xmax,ymax), (10, 255, 0), 2)
+                    # Get bounding box coordinates and draw box
+                    # Interpreter can return coordinates that are outside of image dimensions, need to force them to be within image using max() and min()
+                    ymin = int(max(1,(boxes[i][0] * image_height)))
+                    xmin = int(max(1,(boxes[i][1] * image_width)))
+                    ymax = int(min(image_height,(boxes[i][2] * image_height)))
+                    xmax = int(min(image_width,(boxes[i][3] * image_width)))
+                    
+                    cv2.rectangle(frame, (xmin,ymin), (xmax,ymax), (10, 255, 0), 2)
 
-                # Draw label
-                label = '%s: %d%%' % ('person', int(scores[i]*100)) # e.g. 'person: 95%'
-                labelSize, baseLine = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2) # Get font size
-                label_ymin = max(ymin, labelSize[1] + 10) # Make sure not to draw label too close to top of window
-                cv2.rectangle(frame, (xmin, label_ymin-labelSize[1]-10), (xmin+labelSize[0], label_ymin+baseLine-10), (255, 255, 255), cv2.FILLED) # Draw white box to put label text in
-                cv2.putText(frame, label, (xmin, label_ymin-7), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2) # Draw label text
+                    # Draw label
+                    label = '%s: %d%%' % ('person', int(scores[i]*100)) # e.g. 'person: 95%'
+                    labelSize, baseLine = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2) # Get font size
+                    label_ymin = max(ymin, labelSize[1] + 10) # Make sure not to draw label too close to top of window
+                    cv2.rectangle(frame, (xmin, label_ymin-labelSize[1]-10), (xmin+labelSize[0], label_ymin+baseLine-10), (255, 255, 255), cv2.FILLED) # Draw white box to put label text in
+                    cv2.putText(frame, label, (xmin, label_ymin-7), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2) # Draw label text
+
+            video_recorder.write(frame)
+
+        # Stop recording if;
+        # -> no people are detected on the current frame
+        # -> a video was already being recorded
+        elif is_recording == True:
+            is_recording = False
+            video_recorder.release()
         
         cv2.imshow('IMAGE', frame)
 
@@ -136,5 +171,6 @@ try:
             break
 
 finally:
+    video_recorder.release()
     connection.close()
     server_socket.close()
