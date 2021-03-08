@@ -27,11 +27,50 @@ LABELMAP_PATH = CWD_PATH + os.path.sep + 'model' + os.path.sep + 'labelmap.txt' 
 CAPTURES_PATH = CWD_PATH + os.path.sep + 'captures' + os.path.sep # directory of captured videos
 
 # Confidence threshold for detected objects
-CONFIDENCE_THRESHOLD = 0.5
+CONFIDENCE_THRESHOLD = 0.65
 
-# Initialize video recorder
-video_recorder = cv2.VideoWriter()
-is_recording = False
+class VideoRecorder:
+
+    video_writer = cv2.VideoWriter()
+    is_recording = False
+
+    def __init__(self):
+        pass
+
+    def is_detected(self, classes, scores):
+        for i in range(len(scores)):
+            if (classes[i] == 0) and ((scores[i] > CONFIDENCE_THRESHOLD) and (scores[i] <= 1.0)):
+                return True
+        return False
+
+    # def is_recording(self):
+    #     print(self.is_recording)
+    #     return self.is_recording
+    def start_recording(self):
+        self.is_recording = True
+
+        fourcc = cv2.VideoWriter_fourcc('M','J','P','G')
+        fps = 3
+        start_time = datetime.now().strftime("%d_%m_%Y_%H_%M_%S")
+        video_name = CAPTURES_PATH + 'video_' + start_time + '.avi'
+
+        self.video_writer = cv2.VideoWriter(video_name, fourcc, fps, (image_width, image_height))
+        print("Recording started at " + start_time)
+        print(self.is_recording)
+
+    def stop_recording(self):
+        self.is_recording = False
+        self.video_writer.release()
+
+        stop_time = datetime.now().strftime("%d_%m_%Y_%H_%M_%S")
+        print("Recording stopped at " + stop_time)
+        print(self.is_recording)
+
+    def write(self, frame):
+        self.video_writer.write(frame)
+
+    def release(self):
+        self.video_writer.release()
 
 # Load the label map // Neglect lines with '???'
 def load_labels():
@@ -62,12 +101,8 @@ def get_model_details():
     width = input_details[0]['shape'][2]
     return input_details, output_details, height, width
 
-def check_people_detection(classes):
-    for i in classes:
-        if i == 0:
-            print('Human found')
-            return True
-    return False
+# Initialize video recorder
+video_recorder = VideoRecorder()
 
 # Setup object detection environment
 labels = load_labels()
@@ -123,16 +158,10 @@ try:
         # Instantiate a new video recorder if;
         # -> some people are detected on the current frame
         # -> a video is already not being recorded
-        is_detected = check_people_detection(classes)
-        if is_detected == True:
-            if is_recording == False:
-                is_recording = True
-                fourcc = cv2.VideoWriter_fourcc('M','J','P','G')
-                fps = 2
-                start_time = datetime.now().strftime("%d_%m_%Y_%H_%M_%S")
-                video_name = CAPTURES_PATH + 'video_' + start_time + '.avi'
-                video_recorder = cv2.VideoWriter(video_name, fourcc, fps, (image_width, image_height))
-            
+        if video_recorder.is_detected(classes, scores) == True:
+            if video_recorder.is_recording == False:
+                video_recorder.start_recording()
+
             # Loop over all detections
             for i in range(len(scores)):
                 # Filter humans (classes[i] == 0) and detections above threshold
@@ -144,7 +173,7 @@ try:
                     xmin = int(max(1,(boxes[i][1] * image_width)))
                     ymax = int(min(image_height,(boxes[i][2] * image_height)))
                     xmax = int(min(image_width,(boxes[i][3] * image_width)))
-                    
+
                     cv2.rectangle(frame, (xmin,ymin), (xmax,ymax), (10, 255, 0), 2)
 
                     # Draw label
@@ -154,14 +183,14 @@ try:
                     cv2.rectangle(frame, (xmin, label_ymin-labelSize[1]-10), (xmin+labelSize[0], label_ymin+baseLine-10), (255, 255, 255), cv2.FILLED) # Draw white box to put label text in
                     cv2.putText(frame, label, (xmin, label_ymin-7), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2) # Draw label text
 
+            # Write the frame into the video
             video_recorder.write(frame)
 
         # Stop recording if;
         # -> no people are detected on the current frame
         # -> a video was already being recorded
-        elif is_recording == True:
-            is_recording = False
-            video_recorder.release()
+        elif video_recorder.is_recording == True:
+            video_recorder.stop_recording()
         
         cv2.imshow('IMAGE', frame)
 
