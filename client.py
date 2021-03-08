@@ -4,42 +4,55 @@ import struct
 import time
 import picamera
 
+# Binary data format stands for how to read the incoming byte array
+# '<' depends on host system and stands for little-endian (compatible for Intelx86 and AMD64)
+# 'L' stands for long (32-bit unsigned integer) in the C language data type
+# For more info : https://docs.python.org/3/library/struct.html
+BINARY_DATA_FORMAT = '<L'
+
+# The IP address of the server -> open command line and type 'ipconfig'. Get your ipv4
+IP_ADDRESS = '192.168.2.116'
+
+# The port to be listened on the server
+PORT = 8000
+
+# Create a socket and connect to server
 client_socket = socket.socket()
+client_socket.connect((IP_ADDRESS, PORT))
 
-client_socket.connect(('192.168.1.116', 8000))  # ADD IP HERE
-
-# Make a file-like object out of the connection
-connection = client_socket.makefile('wb')
+# Create a connection to write the stream
+connection = client_socket.makefile('wb') # wb stands for 'write'
 try:
+    # Initialize Pi camera
     camera = picamera.PiCamera()
     camera.vflip = True
     camera.resolution = (500, 480)
+
     # Start a preview and let the camera warm up for 2 seconds
     camera.start_preview()
     time.sleep(2)
 
-    # Note the start time and construct a stream to hold image data
-    # temporarily (we could write it directly to connection but in this
-    # case we want to find out the size of each capture first to keep
-    # our protocol simple)
-    start = time.time()
+    # Create a stream to write the camera input
     stream = io.BytesIO()
-    for foo in camera.capture_continuous(stream, 'jpeg'):
-        # Write the length of the capture to the stream and flush to
-        # ensure it actually gets sent
-        connection.write(struct.pack('<L', stream.tell()))
+
+    # Capture image continuously (record a video into the stream)
+    for _ in camera.capture_continuous(stream, 'jpeg'):
+
+        # Send the length of to be sent image
+        connection.write(struct.pack(BINARY_DATA_FORMAT, stream.tell()))
         connection.flush()
-        # Rewind the stream and send the image data over the wire
+
+        # Go to the stream beginning and send the whole image content
         stream.seek(0)
         connection.write(stream.read())
-        # If we've been capturing for more than 30 seconds, quit
-        if time.time() - start > 60:
-            break
+
         # Reset the stream for the next capture
         stream.seek(0)
         stream.truncate()
-    # Write a length of zero to the stream to signal we're done
-    connection.write(struct.pack('<L', 0))
+
+    # Write a length of zero into the stream to terminate
+    connection.write(struct.pack(BINARY_DATA_FORMAT, 0))
+
 finally:
     connection.close()
     client_socket.close()
